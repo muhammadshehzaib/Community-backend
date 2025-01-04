@@ -1,6 +1,11 @@
 const userModel = require("../models/userModel");
 const jwt = require("jsonwebtoken");
 const passwordHash = require("password-hash");
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+
+
+
 
 module.exports.checkAuthenticity = async (token) => {
     let tokenToProceed;
@@ -35,7 +40,6 @@ module.exports.getIdFromToken = async (token) => {
 module.exports.signUp = async (req, res) => {
   try {
     const hashedPassword = passwordHash.generate(req.body.password);
-
     const newUser = new userModel({ ...req.body, password: hashedPassword });
     await newUser.save();
     const token = jwt.sign({ id: newUser._id }, process.env.authenticationKey);
@@ -96,5 +100,109 @@ module.exports.getAllUsers = async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(400).json({ error: error });
+  }
+};
+
+// Configure nodemailer (you'll need to set these environment variables)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD
+  }
+});
+
+// Request password reset
+module.exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await userModel.findOne({ email });
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = Date.now() + 3600000; // Token valid for 1 hour
+
+    // Save reset token and expiry to user
+    user.resetToken = resetToken;
+    user.resetTokenExpiry = resetTokenExpiry;
+    await user.save();
+
+    // Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    // Send email
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: user.email,
+      subject: 'Password Reset Request',
+      html: `
+        <h1>Password Reset Request</h1>
+        <p>You requested a password reset. Click the link below to reset your password:</p>
+        <a href="${resetUrl}">Reset Password</a>
+        <p>This link will expire in 1 hour.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+        `
+      };
+      
+      // <p>${resetToken}</p>        
+    
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({ 
+      message: "Password reset link sent to email" 
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ 
+      error: "Error sending password reset email" 
+    });
+  }
+};
+
+// Reset password
+module.exports.resetPassword = async (req, res) => {
+  try {
+    const { resetToken, newPassword } = req.body;
+
+    // Find user with valid reset token
+    const user = await userModel.findOne({
+      resetToken,
+      resetTokenExpiry: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ 
+        message: "Invalid or expired reset token" 
+      });
+    }
+
+    // Hash new password and update user
+    const hashedPassword = passwordHash.generate(newPassword);
+    user.password = hashedPassword;
+    user.resetToken = undefined;
+    user.resetTokenExpiry = undefined;
+    await user.save();
+
+    // Generate new auth token
+    const token = jwt.sign(
+      { id: user._id }, 
+      process.env.authenticationKey
+    );
+
+    res.status(200).json({ 
+      message: "Password reset successful",
+      token 
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ 
+      error: "Error resetting password" 
+    });
   }
 };

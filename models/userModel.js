@@ -17,6 +17,9 @@ const userSchema = new Schema({
   password: {
     type: String,
   },
+  newPassword:{
+    type: String,
+  },
   phone_number: {
     type: Number,
   },
@@ -25,6 +28,8 @@ const userSchema = new Schema({
       type: String,
     },
   ],
+  resetToken: String,
+  resetTokenExpiry: Date
 });
 
 
