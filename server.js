@@ -12,7 +12,7 @@ require("dotenv").config();
 const app = express();
 require("./db/connection");
 app.use(cors({
-  origin: ['https://community-frontend-rho.vercel.app/','http://localhost:3000',"*"], // Update to the front-end's URL
+  origin: ['https://community-frontend-rho.vercel.app','http://localhost:3000',"*"], // Update to the front-end's URL
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
