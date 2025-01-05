@@ -132,7 +132,7 @@ module.exports.forgotPassword = async (req, res) => {
     await user.save();
 
     // Create reset URL
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
 
     // Send email
     const mailOptions = {
@@ -203,6 +203,107 @@ module.exports.resetPassword = async (req, res) => {
     console.log(error);
     res.status(500).json({ 
       error: "Error resetting password" 
+    });
+  }
+};
+
+module.exports.updateUserProfile = async (req, res) => {
+  try {
+    // First verify the user is authenticated
+    const authenticated = await this.checkAuthenticity(
+      req.header("Authorization")
+    );
+    
+    if (!authenticated) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // Get user ID from token
+    const userId = await this.getIdFromToken(req.header("Authorization"));
+
+    const updateData = {
+      name: req.body.name,
+      life_style_goals: req.body.life_style_goals,
+      phone_number: req.body.phone_number,
+      interests: req.body.interests,
+    };
+
+    // Remove undefined fields
+    Object.keys(updateData).forEach(key => 
+      updateData[key] === undefined && delete updateData[key]
+    );
+
+
+    // Validate interests if provided
+    if (updateData.interests && !Array.isArray(updateData.interests)) {
+      return res.status(400).json({
+        message: "Interests must be an array"
+      });
+    }
+
+    const updatedUser = await userModel.findByIdAndUpdate(
+      userId,
+      updateData,
+      { 
+        new: true,
+        runValidators: true
+      }
+    ).select('-password -resetToken -resetTokenExpiry -newPassword'); // Exclude sensitive fields
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user: updatedUser
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      error: "Error updating profile",
+      details: error.message
+    });
+  }
+};
+
+module.exports.getProfile = async (req, res) => {
+  try {
+    // First verify the user is authenticated
+    const authenticated = await this.checkAuthenticity(
+      req.header("Authorization")
+    );
+    
+    if (!authenticated) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // Get user ID from token
+    const userId = await this.getIdFromToken(req.header("Authorization"));
+
+    // Find user and exclude sensitive information
+    const user = await userModel.findById(userId)
+      .select('-password -resetToken -resetTokenExpiry');
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
+
+    res.status(200).json({
+      message: "Profile retrieved successfully",
+      user: user
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      error: "Error retrieving profile",
+      details: error.message
     });
   }
 };
