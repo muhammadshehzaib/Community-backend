@@ -132,7 +132,8 @@ module.exports.forgotPassword = async (req, res) => {
     await user.save();
 
     // Create reset URL
-    const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+    // const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+    const resetUrl = `https://community-frontend-rho.vercel.app/reset-password/${resetToken}`;
 
     // Send email
     const mailOptions = {
