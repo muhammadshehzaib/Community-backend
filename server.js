@@ -6,11 +6,13 @@ const socketIo = require("socket.io");
 const User = require("./models/userModel");
 const Room = require("./models/roomModel");
 const Message = require("./models/messagesModel");
+const connectDB = require("./db/connection");
 
 const cors = require("cors");
 require("dotenv").config();
 const app = express();
-require("./db/connection");
+
+connectDB();
 app.use(cors({
   origin: ['https://community-frontend-rho.vercel.app','http://localhost:3000',"*"], // Update to the front-end's URL
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
