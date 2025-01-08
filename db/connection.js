@@ -8,10 +8,7 @@ const connectDB = async () => {
       throw new Error('MONGODB_URI is not defined in environment variables');
     }
     
-    await mongoose.connect(connectionString, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    await mongoose.connect(connectionString);
     
     console.log('MongoDB connected successfully');
   } catch (error) {

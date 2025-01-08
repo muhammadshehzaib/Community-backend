@@ -3,10 +3,10 @@ const http = require("http");
 const socketIo = require("socket.io");
 
 // Models
-const User = require("./models/userModel");
-const Room = require("./models/roomModel");
 const Message = require("./models/messagesModel");
 const connectDB = require("./db/connection");
+const { initializeSocket } = require('./utils/socket');
+
 
 const cors = require("cors");
 require("dotenv").config();
@@ -14,7 +14,7 @@ const app = express();
 
 connectDB();
 app.use(cors({
-  origin: ['https://community-frontend-rho.vercel.app','http://localhost:3000',"*"], // Update to the front-end's URL
+  origin: ['https://community-frontend-rho.vercel.app', 'http://localhost:3000', "*"], // Update to the front-end's URL
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
@@ -24,6 +24,9 @@ app.use(express.json());
 // routers imports
 const userRoutes = require("./routes/userRoutes");
 const roomRoutes = require("./routes/roomRoutes");
+const messageRoutes = require("./routes/messageRoutes")
+const notificationRoutes = require("./routes/notificationRoutes")
+
 
 app.get("/", (req, res) => {
   res.send("Welcome to the Chat Application API!");
@@ -31,12 +34,17 @@ app.get("/", (req, res) => {
 
 app.use(userRoutes);
 app.use(roomRoutes);
+app.use(messageRoutes)
+app.use(notificationRoutes)
 
 const server = http.createServer(app);
 
 const io = socketIo(server, {
   cors: "*",
 });
+
+initializeSocket(io);
+
 
 const authenticateToken = (token) => {
   return true;
@@ -100,14 +108,14 @@ groupNamespace.on("connection", (socket) => {
       timestamp: new Date(),
     });
 
-    console.log(newMessage,"new message");
+    console.log(newMessage, "new message");
 
     await newMessage.save();
 
     // await Room.findByIdAndUpdate(groupId, {
     //   $push: { messages: newMessage._id },
     // });
-    console.log('message emitting',"groupId",groupId);
+    console.log('message emitting', "groupId", groupId);
     groupNamespace.to(groupId).emit("receive-group-message", newMessage);
     console.log('message emiited successfully');
   });
@@ -116,6 +124,30 @@ groupNamespace.on("connection", (socket) => {
     console.log("User disconnected from group chat");
   });
 });
+
+
+const notificationNamespace = io.of("/notifications");
+
+notificationNamespace.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (authenticateToken(token)) next();
+  else next(new Error("Unauthorized"));
+});
+
+notificationNamespace.on("connection", (socket) => {
+  console.log("A user connected to notifications");
+
+  socket.on("join-user-notification-room", (userId) => {
+    // Each user joins their own notification room
+    socket.join(`user-${userId}`);
+    console.log(`User ${userId} joined their notification room`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected from notifications");
+  });
+});
+
 
 server.listen(9000, () => {
   console.log("Http server running on port 9000");
