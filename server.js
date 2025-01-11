@@ -25,7 +25,8 @@ app.use(express.json());
 const userRoutes = require("./routes/userRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const messageRoutes = require("./routes/messageRoutes")
-const notificationRoutes = require("./routes/notificationRoutes")
+const notificationRoutes = require("./routes/notificationRoutes");
+const roomModel = require("./models/roomModel");
 
 
 app.get("/", (req, res) => {
@@ -50,103 +51,104 @@ const authenticateToken = (token) => {
   return true;
 };
 
-const personalNamespace = io.of("/personal-rooms");
-personalNamespace.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (authenticateToken(token)) next();
-  else next(new Error("Unauthorized"));
-});
+// const personalNamespace = io.of("/personal-rooms");
+// personalNamespace.use((socket, next) => {
+//   const token = socket.handshake.auth.token;
+//   if (authenticateToken(token)) next();
+//   else next(new Error("Unauthorized"));
+// });
 
-personalNamespace.on("connection", (socket) => {
-  console.log("A user connected to personal chat");
+// personalNamespace.on("connection", (socket) => {
+//   console.log("A user connected to personal chat");
 
-  socket.on("join-room", (roomId) => {
-    socket.join(roomId);
-    console.log(`User joined personal room: ${roomId}`);
-  });
+//   socket.on("join-room", (roomId) => {
+//     socket.join(roomId);
+//     console.log(`User joined personal room: ${roomId}`);
+//   });
 
-  socket.on("send-message", async (messageData) => {
-    const { roomId, content, senderId } = messageData;
-    const newMessage = new Message({
-      room: roomId,
-      sender: senderId,
-      content,
-      timestamp: new Date(),
-    });
+//   socket.on("send-message", async (messageData) => {
+//     const { roomId, content, senderId } = messageData;
+    
+//     const newMessage = new Message({
+//       room: roomId,
+//       sender: senderId,
+//       content,
+//       timestamp: new Date(),
+//     });
 
-    await newMessage.save();
+//     await newMessage.save();
 
-    personalNamespace.to(roomId).emit("receive-message", newMessage);
-  });
+//     personalNamespace.to(roomId).emit("receive-message", newMessage);
+//   });
 
-  socket.on("disconnect", () => {
-    console.log("User disconnected from personal chat");
-  });
-});
+//   socket.on("disconnect", () => {
+//     console.log("User disconnected from personal chat");
+//   });
+// });
 
-const groupNamespace = io.of("/group-rooms");
-groupNamespace.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (authenticateToken(token)) next();
-  else next(new Error("Unauthorized"));
-});
+// const groupNamespace = io.of("/group-rooms");
+// groupNamespace.use((socket, next) => {
+//   const token = socket.handshake.auth.token;
+//   if (authenticateToken(token)) next();
+//   else next(new Error("Unauthorized"));
+// });
 
-groupNamespace.on("connection", (socket) => {
-  console.log("A user connected to group chat");
+// groupNamespace.on("connection", (socket) => {
+//   console.log("A user connected to group chat");
 
-  socket.on("join-group", (groupId) => {
-    socket.join(groupId);
-    console.log(`User joined group: ${groupId}`);
-  });
+//   socket.on("join-group", (groupId) => {
+//     socket.join(groupId);
+//     console.log(`User joined group: ${groupId}`);
+//   });
 
-  socket.on("send-group-message", async (messageData) => {
-    const { groupId, content, senderId } = messageData;
-    const newMessage = new Message({
-      room: groupId,
-      sender: senderId,
-      content,
-      timestamp: new Date(),
-    });
+//   socket.on("send-group-message", async (messageData) => {
+//     const { groupId, content, senderId } = messageData;
+//     const newMessage = new Message({
+//       room: groupId,
+//       sender: senderId,
+//       content,
+//       timestamp: new Date(),
+//     });
 
-    console.log(newMessage, "new message");
+//     console.log(newMessage, "new message");
 
-    await newMessage.save();
+//     await newMessage.save();
 
-    // await Room.findByIdAndUpdate(groupId, {
-    //   $push: { messages: newMessage._id },
-    // });
-    console.log('message emitting', "groupId", groupId);
-    groupNamespace.to(groupId).emit("receive-group-message", newMessage);
-    console.log('message emiited successfully');
-  });
+//     // await Room.findByIdAndUpdate(groupId, {
+//     //   $push: { messages: newMessage._id },
+//     // });
+//     console.log('message emitting', "groupId", groupId);
+//     groupNamespace.to(groupId).emit("receive-group-message", newMessage);
+//     console.log('message emiited successfully');
+//   });
 
-  socket.on("disconnect", () => {
-    console.log("User disconnected from group chat");
-  });
-});
+//   socket.on("disconnect", () => {
+//     console.log("User disconnected from group chat");
+//   });
+// });
 
 
-const notificationNamespace = io.of("/notifications");
+// const notificationNamespace = io.of("/notifications");
 
-notificationNamespace.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (authenticateToken(token)) next();
-  else next(new Error("Unauthorized"));
-});
+// notificationNamespace.use((socket, next) => {
+//   const token = socket.handshake.auth.token;
+//   if (authenticateToken(token)) next();
+//   else next(new Error("Unauthorized"));
+// });
 
-notificationNamespace.on("connection", (socket) => {
-  console.log("A user connected to notifications");
+// notificationNamespace.on("connection", (socket) => {
+//   console.log("A user connected to notifications");
 
-  socket.on("join-user-notification-room", (userId) => {
-    // Each user joins their own notification room
-    socket.join(`user-${userId}`);
-    console.log(`User ${userId} joined their notification room`);
-  });
+//   socket.on("join-user-notification-room", (userId) => {
+//     // Each user joins their own notification room
+//     socket.join(`user-${userId}`);
+//     console.log(`User ${userId} joined their notification room`);
+//   });
 
-  socket.on("disconnect", () => {
-    console.log("User disconnected from notifications");
-  });
-});
+//   socket.on("disconnect", () => {
+//     console.log("User disconnected from notifications");
+//   });
+// });
 
 
 server.listen(9000, () => {

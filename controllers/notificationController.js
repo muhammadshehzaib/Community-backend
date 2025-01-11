@@ -23,7 +23,7 @@ const createNotification = async (recipientId, senderId, type, roomId, message) 
     return notification;
   } catch (error) {
     console.error("Error creating notification:", error);
-    throw error;
+    throw error;  
   }
 };
 
