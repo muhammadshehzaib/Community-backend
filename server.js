@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
+const roomModel = require("./models/roomModel");
+require('./utils/cron');
 
 // Models
 const Message = require("./models/messagesModel");
@@ -14,7 +16,7 @@ const app = express();
 
 connectDB();
 app.use(cors({
-  origin: ['https://community-frontend-rho.vercel.app', 'http://localhost:3000', "*"], // Update to the front-end's URL
+  origin: ['https://community-frontend-rho.vercel.app', 'http://localhost:3000','http://localhost:3001', "*"],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
@@ -24,9 +26,10 @@ app.use(express.json());
 // routers imports
 const userRoutes = require("./routes/userRoutes");
 const roomRoutes = require("./routes/roomRoutes");
-const messageRoutes = require("./routes/messageRoutes")
+const messageRoutes = require("./routes/messageRoutes");
+const milestoneRoutes = require("./routes/milestoneRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
-const roomModel = require("./models/roomModel");
+const groupMilestoneRoutes = require('./routes/groupMilestoneRoutes');
 
 
 app.get("/", (req, res) => {
@@ -35,8 +38,10 @@ app.get("/", (req, res) => {
 
 app.use(userRoutes);
 app.use(roomRoutes);
-app.use(messageRoutes)
-app.use(notificationRoutes)
+app.use(messageRoutes);
+app.use(notificationRoutes);
+app.use(milestoneRoutes);
+app.use(groupMilestoneRoutes);
 
 const server = http.createServer(app);
 

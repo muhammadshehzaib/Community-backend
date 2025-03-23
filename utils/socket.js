@@ -1,6 +1,7 @@
 const Message = require("../models/messagesModel");
 const Notification = require("../models/notificationModel");
 const roomModel = require("../models/roomModel");
+const { createGroupMilestone, updateGroupMilestone, deleteGroupMilestone } = require("../controllers/milestoneController");
 
 const authenticateToken = (token) => {
   // Implement proper authentication logic for tokens
@@ -47,23 +48,26 @@ const initializeSocket = (io) => {
         });
         await newMessage.save();
 
+        // Create a notification for the recipient
         const newNotification = new Notification({
-          recipient: recipient[0],
+          recipient: recipient[0], // Specific recipient for personal messages
           sender: senderId,
           type: "personal_message",
-          room: roomId,
-          message: content,
+          metadata: {
+            messageId: newMessage._id,
+            content: content,
+            roomId: roomId,
+          },
         });
         await newNotification.save();
 
+        // Emit the new message to the room
         personalNamespace.to(roomId).emit("receive-message", newMessage);
 
+        // Emit the new notification to the recipient
         notificationNamespace
           .to(`user-${recipient[0]}`)
-          .emit("new-notification", {
-            ...newNotification._doc,
-            message: newMessage,
-          });
+          .emit("new-notification", newNotification);
       } catch (error) {
         console.error("Error saving message or notification:", error);
         socket.emit("error", { message: "Failed to send message." });
@@ -122,31 +126,57 @@ const initializeSocket = (io) => {
         });
         await newMessage.save();
 
+        // Broadcast the new message to the group
         groupNamespace.to(groupId).emit("receive-group-message", newMessage);
 
-        // Use map with Promise.all to handle async operations
+        // Create notifications for all recipients
         await Promise.all(
           recipients.map(async (recipientId) => {
             const newNotification = new Notification({
-              recipient: recipientId,
+              recipient: recipientId, // Specific recipient for group messages
               sender: senderId,
               type: "group_message",
-              room: groupId,
-              message: content,
+              metadata: {
+                messageId: newMessage._id,
+                content: content,
+                groupId: groupId,
+              },
             });
             await newNotification.save();
 
+            // Emit the new notification to the recipient
             notificationNamespace
               .to(`user-${recipientId}`)
-              .emit("new-notification", {
-                ...newNotification._doc,
-                message: newMessage,
-              });
+              .emit("new-notification", newNotification);
           })
         );
       } catch (error) {
         console.error("Error saving group message or notifications:", error);
         socket.emit("error", { message: "Failed to send group message." });
+      }
+    });
+
+    // --- Group Milestone Events ---
+    socket.on("group-milestone", async (milestoneData) => {
+      try {
+        const { groupId,id } = milestoneData;
+        console.log("groupId",groupId);
+        const newNotification = new Notification({
+              type: "milestone-notification",
+              metadata: {
+                milestoneId:id,
+                content: "Milestone created",
+                groupId: groupId,
+              },
+            });
+            notificationNamespace
+              .to(`user-${groupId}`)
+              .emit("new-notification", newNotification);
+            await newNotification.save();
+        groupNamespace.to(groupId).emit("new-group-milestone",milestoneData);
+      } catch (error) {
+        console.error("Error creating group milestone:", error);
+        socket.emit("error", { message: "Failed to create group milestone." });
       }
     });
 

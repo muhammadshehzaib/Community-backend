@@ -1,38 +1,37 @@
 const mongoose = require("mongoose");
 
-const notificationSchema = new mongoose.Schema({
-  recipient: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
+const notificationSchema = new mongoose.Schema(
+  {
+    recipient: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true, // Index for faster queries
+    },
+    sender: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    type: {
+      type: String,
+      required: true,
+      index: true, 
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed, // Flexible field for additional data
+      default: {},
+    },
+    read: {
+      type: Boolean,
+      default: false,
+    },
   },
-  sender: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  },
-  type: {
-    type: String,
-    enum: ["personal_message", "group_message"],
-    required: true
-  },
-  room: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Room",
-    required: true
-  },
-  message: {
-    type: String,
-    required: true
-  },
-  read: {
-    type: Boolean,
-    default: false
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  {
+    timestamps: true,
   }
-});
+);
+
+// Indexes for faster queries
+notificationSchema.index({ recipient: 1, read: 1 });
+notificationSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Notification", notificationSchema);
