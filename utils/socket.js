@@ -159,21 +159,48 @@ const initializeSocket = (io) => {
     // --- Group Milestone Events ---
     socket.on("group-milestone", async (milestoneData) => {
       try {
-        const { groupId,id } = milestoneData;
-        console.log("groupId",groupId);
-        const newNotification = new Notification({
-              type: "milestone-notification",
+        const { groupId, id, senderId,type } = milestoneData;
+        const roomData = await roomModel.findById(groupId);
+        if (!roomData || !roomData.members) {
+          console.error("Group room not found or has no members");
+          socket.emit("error", { message: "Invalid group or no members found." });
+          return;
+        }
+
+        // Exclude the sender from the recipient list
+        const recipients = roomData.members.filter((item) => {
+          return item.toString() !== senderId.toString();
+        });
+
+        if (!recipients) {
+          console.error("No recipients found in the group");
+          socket.emit("error", { message: "No recipients found in the group." });
+          return;
+        }
+
+        await Promise.all(
+          recipients.map(async (recipientId) => {
+            console.log("Recipient ID:", recipientId);
+            
+            const newNotification = new Notification({
+              recipient: recipientId,
+              sender: senderId,
+              type: type || "group_milestone",
               metadata: {
-                milestoneId:id,
-                content: "Milestone created",
+                milestoneId: id,
+                // content: content,
                 groupId: groupId,
               },
             });
-            notificationNamespace
-              .to(`user-${groupId}`)
-              .emit("new-notification", newNotification);
             await newNotification.save();
-        groupNamespace.to(groupId).emit("new-group-milestone",milestoneData);
+
+            // Emit the new notification to the recipient
+            notificationNamespace
+              .to(`user-${recipientId}`)
+              .emit("new-notification", newNotification);
+          })
+        );
+        groupNamespace.to(groupId).emit("new-group-milestone", milestoneData);
       } catch (error) {
         console.error("Error creating group milestone:", error);
         socket.emit("error", { message: "Failed to create group milestone." });
