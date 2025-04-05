@@ -1,9 +1,13 @@
+// notificationRoutes.js
 const express = require("express");
-const notificationController = require("../controllers/notificationController");
 const router = express.Router();
 
-router.get("/notifications", notificationController.getUserNotifications);
-router.put("/notifications/:notificationId/read", notificationController.markNotificationAsRead);
-router.put("/notifications/mark-all-read", notificationController.markAllNotificationsAsRead);
+module.exports = (io) => {
+  const notificationController = require("../controllers/notificationController")(io);
 
-module.exports = router;
+  router.get("/", notificationController.getUserNotifications);
+  router.put("/:notificationId/read", notificationController.markNotificationAsRead);
+  router.put("/mark-all-read", notificationController.markAllAsRead);
+
+  return router;
+};

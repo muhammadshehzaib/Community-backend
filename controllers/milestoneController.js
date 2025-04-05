@@ -1,11 +1,38 @@
 const Milestone = require('../models/milestonModel');
-const { completeMilestone } = require('../utils/milestoneUtils');
+const notificationService = require('../services/notificationService');
 
-// Create a new milestone
+// Timeout tracking for auto-completion
+const milestoneTimeouts = new Map();
+
+const setCompletionTimeout = (milestone) => {
+    // Clear existing timeout if any
+    if (milestoneTimeouts.has(milestone._id.toString())) {
+        clearTimeout(milestoneTimeouts.get(milestone._id.toString()));
+    }
+
+    const timeRemaining = milestone.end - Date.now();
+    if (timeRemaining > 0) {
+        const timeoutId = setTimeout(() => handleCompletion(milestone), timeRemaining);
+        milestoneTimeouts.set(milestone._id.toString(), timeoutId);
+    }
+};
+
+const handleCompletion = async (milestone) => {
+    try {
+        milestone.status = 'Completed';
+        await milestone.save();
+
+        milestoneTimeouts.delete(milestone._id.toString());
+    } catch (error) {
+        console.error('Completion handler error:', error);
+    }
+};
+
+// Create personal milestone
 const createMilestone = async (req, res) => {
     try {
         const { title, start, end, description, category } = req.body;
-        const userId = req.user;
+        const userId = req.user._id;
 
         const milestone = new Milestone({
             title,
@@ -13,114 +40,90 @@ const createMilestone = async (req, res) => {
             end,
             description,
             category,
-            user: userId,
-            status: 'Pending'
+            user: userId
         });
 
         await milestone.save();
+        setCompletionTimeout(milestone);
 
-        // Set a timeout for milestone completion
-        const timeRemaining = milestone.end - Date.now();
-        if (timeRemaining > 0) {
-            setTimeout(() => completeMilestone(milestone), timeRemaining);
-        }
-
-        res.status(201).send(milestone);
+        res.status(201).json(milestone);
     } catch (error) {
-        res.status(400).send(error);
+        res.status(400).json({ message: error.message });
     }
 };
 
-// Update a milestone by ID
+// Update personal milestone
 const updateMilestone = async (req, res) => {
     try {
-        const milestoneId = req.params.milestoneId;
-        const userId = req.user;
+        const milestoneId = req.params.id;
+        const userId = req.user._id;
+        const updates = req.body;
 
-        const milestone = await Milestone.findById(milestoneId);
-
-        if (!milestone) {
-            return res.status(404).send({ message: 'Milestone not found' });
-        }
-        if (milestone.user.toString() !== userId) {
-            return res.status(403).send({ message: 'You are not authorized to update this milestone' });
-        }
-
-        // Update the milestone
-        const updatedMilestone = await Milestone.findByIdAndUpdate(milestoneId, req.body, {
-            new: true,
-            runValidators: true
+        const milestone = await Milestone.findOne({
+            _id: milestoneId,
+            user: userId
         });
 
-        // Set a timeout for milestone completion
-        const timeRemaining = updatedMilestone.end - Date.now();
-        if (timeRemaining > 0) {
-            setTimeout(() => completeMilestone(updatedMilestone), timeRemaining);
-        }
-
-        res.status(200).send(updatedMilestone);
-    } catch (error) {
-        res.status(400).send(error);
-    }
-};
-
-// Get all milestones for the authenticated user
-const getUserMilestones = async (req, res) => {
-    try {
-        const milestones = await Milestone.find({ user: req.user });
-        res.status(200).send(milestones);
-    } catch (error) {
-        res.status(500).send(error);
-    }
-};
-
-// Get a single milestone by ID
-const getMilestone = async (req, res) => {
-    try {
-        const milestoneId = req.params.milestoneId;
-        const userId = req.user;
-
-        const milestone = await Milestone.findById(milestoneId);
-
         if (!milestone) {
-            return res.status(404).send({ message: 'Milestone not found' });
-        }
-        if (milestone.user.toString() !== userId) {
-            return res.status(403).send({ message: 'You are not authorized to access this milestone' });
+            return res.status(404).json({ message: 'Milestone not found' });
         }
 
-        res.status(200).send(milestone);
+        Object.assign(milestone, updates);
+        await milestone.save();
+        setCompletionTimeout(milestone);
+
+
+        res.json(milestone);
     } catch (error) {
-        res.status(500).send(error);
+        res.status(400).json({ message: error.message });
     }
 };
 
-// Delete a milestone by ID
+// Delete personal milestone
 const deleteMilestone = async (req, res) => {
     try {
-        const milestoneId = req.params.milestoneId;
-        const userId = req.user;
+        const milestoneId = req.params.id;
+        const userId = req.user._id;
 
-        const milestone = await Milestone.findById(milestoneId);
+        const milestone = await Milestone.findOneAndDelete({
+            _id: milestoneId,
+            user: userId
+        });
 
         if (!milestone) {
-            return res.status(404).send({ message: 'Milestone not found' });
-        }
-        if (milestone.user.toString() !== userId) {
-            return res.status(403).send({ message: 'You are not authorized to delete this milestone' });
+            return res.status(404).json({ message: 'Milestone not found' });
         }
 
-        await Milestone.findByIdAndDelete(milestoneId);
-        res.status(200).send({ message: 'Milestone deleted successfully', milestone });
+        // Clear timeout if exists
+        if (milestoneTimeouts.has(milestoneId)) {
+            clearTimeout(milestoneTimeouts.get(milestoneId));
+            milestoneTimeouts.delete(milestoneId);
+        }
+        res.json({ message: 'Milestone deleted successfully' });
     } catch (error) {
-        res.status(500).send(error);
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// Get all personal milestones
+const getMilestones = async (req, res) => {
+    try {
+        console.log('Fetching milestones for user:');
+        // if (!req.user || !req.user._id) {
+        //     return res.status(401).json({ message: 'Unauthorized' });
+        // }
+        
+        // const milestones = await Milestone.find({ user: req.user._id });
+        res.json({milestones:"hello"});
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 };
 
 module.exports = {
     createMilestone,
     updateMilestone,
-    getUserMilestones,
-    getMilestone,
-    deleteMilestone
+    deleteMilestone,
+    getMilestones,
+    handleCompletion
 };

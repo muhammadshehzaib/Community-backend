@@ -1,45 +1,45 @@
 const Message = require("../models/messagesModel");
 const Notification = require("../models/notificationModel");
-const roomModel = require("../models/roomModel");
-const { createGroupMilestone, updateGroupMilestone, deleteGroupMilestone } = require("../controllers/milestoneController");
-
-const authenticateToken = (token) => {
-  // Implement proper authentication logic for tokens
-  return true; // Dummy return for example
-};
+const Room = require("../models/roomModel");
 
 const initializeSocket = (io) => {
-  // --- Personal Namespace ---
-  const personalNamespace = io.of("/personal-rooms");
+  // Create notification service with io instance
+  const notificationService = require("../services/notificationService")(io);
 
-  personalNamespace.use((socket, next) => {
-    const token = socket.handshake.auth.token;
-    if (authenticateToken(token)) next();
-    else next(new Error("Unauthorized"));
-  });
+  // --- Authentication Middleware ---
+  const authenticateSocket = async (socket, next) => {
+    next();
+  };
+
+  // --- Personal Chat Namespace ---
+  const personalNamespace = io.of("/personal-rooms");
+  personalNamespace.use(authenticateSocket);
 
   personalNamespace.on("connection", (socket) => {
-    console.log("A user connected to personal chat");
+    console.log(`User connected to personal chat`);
 
-    socket.on("join-room", (roomId) => {
-      socket.join(roomId);
-      console.log(`User joined personal room: ${roomId}`);
+    socket.on("join-room", async (roomId) => {
+      try {
+        const room = await Room.findById(roomId);
+        socket.join(roomId);
+      } catch (error) {
+        console.error("Room join error:", error.message);
+        socket.emit("error", { message: error.message });
+      }
     });
 
     socket.on("send-message", async (messageData) => {
-      const { roomId, content, senderId } = messageData;
-      const roomData = await roomModel.findById(roomId);
-      const recipient = roomData.members.filter((item) => {
-        return item.toString() !== senderId.toString();
-      });
-
-      if (!recipient[0]) {
-        console.error("Recipient ID is missing");
-        socket.emit("error", { message: "Recipient ID is required." });
-        return;
-      }
-
       try {
+        const { roomId, content, senderId } = messageData;
+
+        const room = await Room.findById(roomId);
+        if (!room) throw new Error("Room not found");
+
+        const recipient = room.members.find(member =>
+          member.toString() !== senderId.toString()
+        );
+        if (!recipient) throw new Error("Recipient not found");
+
         const newMessage = new Message({
           room: roomId,
           sender: senderId,
@@ -48,75 +48,52 @@ const initializeSocket = (io) => {
         });
         await newMessage.save();
 
-        // Create a notification for the recipient
-        const newNotification = new Notification({
-          recipient: recipient[0], // Specific recipient for personal messages
-          sender: senderId,
-          type: "personal_message",
+        await notificationService.createNotification({
+          recipientId: recipient,
+          senderId: senderId,
+          type: notificationService.notificationTypes.PERSONAL_MESSAGE,
           metadata: {
             messageId: newMessage._id,
             content: content,
             roomId: roomId,
-          },
+          }
         });
-        await newNotification.save();
 
-        // Emit the new message to the room
         personalNamespace.to(roomId).emit("receive-message", newMessage);
-
-        // Emit the new notification to the recipient
-        notificationNamespace
-          .to(`user-${recipient[0]}`)
-          .emit("new-notification", newNotification);
       } catch (error) {
-        console.error("Error saving message or notification:", error);
-        socket.emit("error", { message: "Failed to send message." });
+        console.error("Message send error:", error.message);
+        socket.emit("error", { message: error.message });
       }
     });
 
     socket.on("disconnect", () => {
-      console.log("User disconnected from personal chat");
+      console.log(`User disconnected from personal chat`);
     });
   });
 
-  // --- Group Namespace ---
+  // --- Group Chat Namespace ---
   const groupNamespace = io.of("/group-rooms");
-
-  groupNamespace.use((socket, next) => {
-    const token = socket.handshake.auth.token;
-    if (authenticateToken(token)) next();
-    else next(new Error("Unauthorized"));
-  });
+  groupNamespace.use(authenticateSocket);
 
   groupNamespace.on("connection", (socket) => {
-    console.log("A user connected to group chat");
+    console.log(`User connected to group chat`);
 
-    socket.on("join-group", (groupId) => {
-      socket.join(groupId);
-      console.log(`User joined group: ${groupId}`);
+    socket.on("join-group", async (groupId) => {
+      try {
+        const group = await Room.findById(groupId);
+        socket.join(groupId);
+      } catch (error) {
+        console.error("Group join error:", error.message);
+        socket.emit("error", { message: error.message });
+      }
     });
 
     socket.on("send-group-message", async (messageData) => {
-      const { groupId, content, senderId } = messageData;
-
       try {
-        const roomData = await roomModel.findById(groupId);
-        if (!roomData || !roomData.members) {
-          console.error("Group room not found or has no members");
-          socket.emit("error", { message: "Invalid group or no members found." });
-          return;
-        }
+        const { groupId, content, senderId } = messageData;
 
-        // Exclude the sender from the recipient list
-        const recipients = roomData.members.filter((item) => {
-          return item.toString() !== senderId.toString();
-        });
-
-        if (!recipients) {
-          console.error("No recipients found in the group");
-          socket.emit("error", { message: "No recipients found in the group." });
-          return;
-        }
+        const group = await Room.findById(groupId);
+        if (!group) throw new Error("Group not found");
 
         const newMessage = new Message({
           room: groupId,
@@ -126,88 +103,95 @@ const initializeSocket = (io) => {
         });
         await newMessage.save();
 
-        // Broadcast the new message to the group
-        groupNamespace.to(groupId).emit("receive-group-message", newMessage);
-
-        // Create notifications for all recipients
-        await Promise.all(
-          recipients.map(async (recipientId) => {
-            const newNotification = new Notification({
-              recipient: recipientId, // Specific recipient for group messages
-              sender: senderId,
-              type: "group_message",
+        // Notify all group members except sender
+        group.members.forEach(async (memberId) => {
+          if (memberId.toString() !== senderId.toString()) {
+            await notificationService.createNotification({
+              recipientId: memberId,
+              senderId: senderId,
+              type: notificationService.notificationTypes.GROUP_MESSAGE,
               metadata: {
                 messageId: newMessage._id,
                 content: content,
                 groupId: groupId,
-              },
+              }
             });
-            await newNotification.save();
+          }
+        });
 
-            // Emit the new notification to the recipient
-            notificationNamespace
-              .to(`user-${recipientId}`)
-              .emit("new-notification", newNotification);
-          })
-        );
+        groupNamespace.to(groupId).emit("receive-group-message", newMessage);
       } catch (error) {
-        console.error("Error saving group message or notifications:", error);
-        socket.emit("error", { message: "Failed to send group message." });
+        console.error("Group message error:", error.message);
+        socket.emit("error", { message: error.message });
       }
     });
 
-    // --- Group Milestone Events ---
     socket.on("group-milestone", async (milestoneData) => {
       try {
-        const { groupId,id } = milestoneData;
-        console.log("groupId",groupId);
-        const newNotification = new Notification({
-              type: "milestone-notification",
-              metadata: {
-                milestoneId:id,
-                content: "Milestone created",
-                groupId: groupId,
-              },
-            });
-            notificationNamespace
-              .to(`user-${groupId}`)
-              .emit("new-notification", newNotification);
-            await newNotification.save();
-        groupNamespace.to(groupId).emit("new-group-milestone",milestoneData);
+        const { groupId, _id, action, senderId } = milestoneData;
+
+        const group = await Room.findById(groupId);
+        if (!group) throw new Error("Group not found");
+
+        let notificationType;
+        switch (action) {
+          case 'create':
+            notificationType = notificationService.notificationTypes.GROUP_MILESTONE_CREATED;
+            break;
+          case 'update':
+            notificationType = notificationService.notificationTypes.GROUP_MILESTONE_UPDATED;
+            break;
+          case 'delete':
+            notificationType = notificationService.notificationTypes.GROUP_MILESTONE_DELETED;
+            break;
+          default:
+            throw new Error("Invalid milestone action");
+        }
+
+        // Notify all group members
+        group.members.forEach(async (memberId) => {
+          await notificationService.createNotification({
+            recipientId: memberId,
+            senderId: senderId,
+            type: notificationType,
+            metadata: {
+              milestoneId: _id,
+              action: action,
+              groupId: groupId
+            }
+          });
+        });
+
+        groupNamespace.to(groupId).emit("group-milestone-update", milestoneData);
       } catch (error) {
-        console.error("Error creating group milestone:", error);
-        socket.emit("error", { message: "Failed to create group milestone." });
+        console.error("Milestone event error:", error.message);
+        socket.emit("error", { message: error.message });
       }
     });
 
     socket.on("disconnect", () => {
-      console.log("User disconnected from group chat");
+      console.log(`User disconnected from group chat`);
     });
   });
 
   // --- Notification Namespace ---
   const notificationNamespace = io.of("/notifications");
-
-  notificationNamespace.use((socket, next) => {
-    const token = socket.handshake.auth.token;
-    if (authenticateToken(token)) next();
-    else next(new Error("Unauthorized"));
-  });
+  notificationNamespace.use(authenticateSocket);
 
   notificationNamespace.on("connection", (socket) => {
-    console.log("A user connected to notifications");
+    console.log(`User connected to notifications`);
 
     socket.on("join-user-notification-room", (userId) => {
       socket.join(`user-${userId}`);
-      console.log(`User ${userId} joined their notification room`);
+      console.log(`User ${userId} joined notification room`);
     });
 
     socket.on("disconnect", () => {
-      console.log("User disconnected from notifications");
+      console.log(`User disconnected from notifications`);
     });
   });
 
-  console.log("Socket.io initialized");
+  console.log("Socket.io initialized with all namespaces");
 };
 
 module.exports = { initializeSocket };

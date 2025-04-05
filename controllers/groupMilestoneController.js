@@ -1,24 +1,59 @@
 const GroupMilestone = require('../models/groupMilestoneModel');
 const Room = require('../models/roomModel');
-const { sendEmail } = require('../utils/emailUtils');
-const { completeMilestone } = require('../utils/milestoneUtils');
+const notificationService = require('../services/notificationService');
 
-// Create a group milestone (only admin can create)
+// Timeout tracking for group milestones
+const groupMilestoneTimeouts = new Map();
+
+const setGroupCompletionTimeout = (milestone) => {
+    const timeoutKey = `group-${milestone._id}`;
+
+    // Clear existing timeout
+    if (groupMilestoneTimeouts.has(timeoutKey)) {
+        clearTimeout(groupMilestoneTimeouts.get(timeoutKey));
+    }
+
+    const timeRemaining = milestone.end - Date.now();
+    if (timeRemaining > 0) {
+        const timeoutId = setTimeout(() => handleGroupCompletion(milestone), timeRemaining);
+        groupMilestoneTimeouts.set(timeoutKey, timeoutId);
+    }
+};
+
+const handleGroupCompletion = async (milestone) => {
+    try {
+        milestone.status = 'Completed';
+        await milestone.save();
+
+        await notificationService.createGroupNotification({
+            groupId: milestone.group,
+            senderId: milestone.createdBy,
+            type: notificationService.notificationTypes.GROUP_MILESTONE_COMPLETED,
+            metadata: {
+                milestoneId: milestone._id,
+                title: milestone.title
+            }
+        });
+
+        groupMilestoneTimeouts.delete(`group-${milestone._id}`);
+    } catch (error) {
+        console.error('Group completion error:', error);
+    }
+};
+
+// Create group milestone
 const createGroupMilestone = async (req, res) => {
     try {
         const { title, start, end, description, category, groupId } = req.body;
         const userId = req.user;
+        console.log(userId, 'userId');
 
-        // Check if the user is the admin of the group
+        // Verify user is group admin (optional)
         const group = await Room.findById(groupId);
         if (!group) {
-            return res.status(404).send({ message: 'Group not found' });
+            return res.status(404).json({ message: 'Group not found' });
         }
-        // if (group.admin.toString() !== userId) {
-        //     return res.status(403).send({ message: 'Only the group admin can create milestones' });
-        // }
 
-        // Create the group milestone
         const milestone = new GroupMilestone({
             title,
             start,
@@ -30,105 +65,112 @@ const createGroupMilestone = async (req, res) => {
         });
 
         await milestone.save();
+        setGroupCompletionTimeout(milestone);
 
-        // Set a timeout for milestone completion
-        const timeRemaining = milestone.end - Date.now();
-        if (timeRemaining > 0) {
-            setTimeout(() => completeMilestone(milestone), timeRemaining);
-        }
+        // // Notify all group members
+        // await notificationService.createGroupNotification({
+        //     groupId,
+        //     senderId: userId,
+        //     type: notificationService.notificationTypes.GROUP_MILESTONE_CREATED,
+        //     metadata: {
+        //         milestoneId: milestone._id,
+        //         title,
+        //         description
+        //     },
+        //     read:'false'
 
-        // Broadcast the new milestone to all group members
-        // req.io.to(groupId).emit('new-group-milestone', milestone);
+        // });
 
-        res.status(201).send(milestone);
+        res.status(201).json(milestone);
     } catch (error) {
-        res.status(400).send(error);
+        res.status(400).json({ message: error.message });
     }
 };
 
-// Update a group milestone (only admin can update)
+// Update group milestone
 const updateGroupMilestone = async (req, res) => {
     try {
-        const milestoneId = req.params.milestoneId;
-        const userId = req.user;
+        const milestoneId = req.params.id;
+        const userId = req.user._id;
+        const updates = req.body;
 
-        const milestone = await GroupMilestone.findById(milestoneId);
-
-        if (!milestone) {
-            return res.status(404).send({ message: 'Milestone not found' });
-        }
-
-        // Check if the user is the admin of the group
-        const group = await Room.findById(milestone.group);
-        // if (group.admin.toString() !== userId) {
-        //     return res.status(403).send({ message: 'Only the group admin can update milestones' });
-        // }
-
-        // Update the milestone
-        const updatedMilestone = await GroupMilestone.findByIdAndUpdate(milestoneId, req.body, {
-            new: true,
-            runValidators: true
+        const milestone = await GroupMilestone.findOne({
+            _id: milestoneId,
+            createdBy: userId
         });
 
-        // Broadcast the updated milestone to all group members
-        // req.io.to(milestone.group).emit('new-group-milestone', updatedMilestone);
-
-        res.status(200).send(updatedMilestone);
-    } catch (error) {
-        res.status(400).send(error);
-    }
-};
-
-// Delete a group milestone (only admin can delete)
-const deleteGroupMilestone = async (req, res) => {
-    try {
-        const milestoneId = req.params.milestoneId;
-        const userId = req.user;
-
-        const milestone = await GroupMilestone.findById(milestoneId);
-
         if (!milestone) {
-            return res.status(404).send({ message: 'Milestone not found' });
+            return res.status(404).json({ message: 'Milestone not found' });
         }
 
-        // Check if the user is the admin of the group
-        const group = await Room.findById(milestone.group);
-        // if (group.admin.toString() !== userId) {
-        //     return res.status(403).send({ message: 'Only the group admin can delete milestones' });
-        // }
+        Object.assign(milestone, updates);
+        await milestone.save();
+        setGroupCompletionTimeout(milestone);
 
-        // Delete the milestone
-        await GroupMilestone.findByIdAndDelete(milestoneId);
+        await notificationService.createGroupNotification({
+            groupId: milestone.group,
+            senderId: userId,
+            type: notificationService.notificationTypes.GROUP_MILESTONE_UPDATED,
+            metadata: {
+                milestoneId: milestone._id,
+                title: milestone.title,
+                changes: Object.keys(updates)
+            }
+        });
 
-        // Broadcast the deleted milestone to all group members
-        // socket.io.to(milestone.group).emit('new-group-milestone', milestoneId);
-
-        res.status(200).send({ message: 'Milestone deleted successfully', milestone });
+        res.json(milestone);
     } catch (error) {
-        res.status(500).send(error);
+        res.status(400).json({ message: error.message });
     }
 };
 
-// Get all milestones for a group (only group members can access)
+// Delete group milestone
+const deleteGroupMilestone = async (req, res) => {
+    try {
+        const milestoneId = req.params.id;
+        const userId = req.user._id;
+
+        const milestone = await GroupMilestone.findOneAndDelete({
+            _id: milestoneId,
+            createdBy: userId
+        });
+
+        if (!milestone) {
+            return res.status(404).json({ message: 'Milestone not found' });
+        }
+
+        // Clear timeout if exists
+        const timeoutKey = `group-${milestoneId}`;
+        if (groupMilestoneTimeouts.has(timeoutKey)) {
+            clearTimeout(groupMilestoneTimeouts.get(timeoutKey));
+            groupMilestoneTimeouts.delete(timeoutKey);
+        }
+
+        await notificationService.createGroupNotification({
+            groupId: milestone.group,
+            senderId: userId,
+            type: notificationService.notificationTypes.GROUP_MILESTONE_DELETED,
+            metadata: {
+                milestoneTitle: milestone.title
+            }
+        });
+
+        res.json({ message: 'Milestone deleted successfully' });
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// Get all milestones for a group
 const getGroupMilestones = async (req, res) => {
     try {
         const groupId = req.params.groupId;
-        const userId = req.user;
-
-        // Check if the user is a member of the group
-        const group = await Room.findById(groupId);
-        if (!group) {
-            return res.status(404).send({ message: 'Group not found' });
-        }
-        if (!group.members.includes(userId)) {
-            return res.status(403).send({ message: 'You are not a member of this group' });
-        }
-
-        // Fetch milestones for the group
+        console.log(groupId,'groupId');
+        
         const milestones = await GroupMilestone.find({ group: groupId });
-        res.status(200).send(milestones);
+        res.json(milestones);
     } catch (error) {
-        res.status(500).send(error);
+        res.status(500).json({ message: error.message });
     }
 };
 
@@ -136,5 +178,6 @@ module.exports = {
     createGroupMilestone,
     updateGroupMilestone,
     deleteGroupMilestone,
-    getGroupMilestones
+    getGroupMilestones,
+    handleGroupCompletion
 };
