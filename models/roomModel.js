@@ -21,19 +21,19 @@ const roomSchema = new Schema(
     },
     imageUrl: {
       type: String,
-      required: function () {
-        return this.type === "group";
-      },
+      // required: function () {
+      //   return this.type === "group";
+      // },
     },
     members: [
       {
         type: Schema.Types.ObjectId,
-        ref: "user",
+        ref: "User",
       },
     ],
     admin: {
       type: Schema.Types.ObjectId,
-      ref: "user",
+      ref: "User",
       required: function () {
         return this.type === "group";
       },
@@ -65,6 +65,6 @@ roomSchema.pre("validate", function (next) {
   next();
 });
 
-const roomModel = mongoose.model("room", roomSchema);
+const roomModel = mongoose.model("Room", roomSchema);
 
 module.exports = roomModel;
