@@ -1,33 +1,40 @@
 const { Schema, default: mongoose, model } = require("mongoose");
 
 const userSchema = new Schema({
-  name: {
+  firstName: {
+    type: String,
+  },
+  lastName: {
     type: String,
   },
   email: {
     type: String,
     unique : true
   },
-  gender: {
-    enum: ["male", "female", "other"],
+  dob: {
+    type: Date,
+    required: true,  
   },
-  life_style_goals: {
-    type: String,
-  },
+  // gender: {
+  //   enum: ["male", "female", "other"],
+  // },
+  // life_style_goals: {
+  //   type: String,
+  // },
   password: {
     type: String,
   },
   newPassword:{
     type: String,
   },
-  phone_number: {
-    type: Number,
-  },
-  interests: [
-    {
-      type: String,
-    },
-  ],
+  // phone_number: {
+  //   type: Number,
+  // },
+  // interests: [
+  //   {
+  //     type: String,
+  //   },
+  // ],
   resetToken: String,
   resetTokenExpiry: Date
 });
