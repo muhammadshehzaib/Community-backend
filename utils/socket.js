@@ -74,6 +74,44 @@ const initializeSocket = (io) => {
       }
     });
 
+    socket.on("delete-message", async (data) => {
+      const { messageId, roomId, senderId } = data;
+
+      try {
+        const message = await Message.findById(messageId);
+
+        if (!message) {
+          socket.emit("delete-message-error", {
+            error: "Message not found"
+          });
+          return;
+        }
+
+        if (message.sender.toString() !== senderId.toString()) {
+          socket.emit("delete-message-error", {
+            error: "Unauthorized: You can only delete your own messages"
+          });
+          return;
+        }
+
+        await Message.findByIdAndDelete(messageId);
+
+        personalNamespace.to(roomId).emit("message-deleted", {
+          messageId,
+          roomId,
+          deletedBy: senderId
+        });
+
+        console.log(`Message ${messageId} deleted by user ${senderId} in room ${roomId}`);
+
+      } catch (error) {
+        console.error("Error deleting message:", error);
+        socket.emit("delete-message-error", {
+          error: "Failed to delete message"
+        });
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log("User disconnected from personal chat");
     });
@@ -159,7 +197,7 @@ const initializeSocket = (io) => {
     // --- Group Milestone Events ---
     socket.on("group-milestone", async (milestoneData) => {
       try {
-        const { groupId, id, senderId,type } = milestoneData;
+        const { groupId, id, senderId, type } = milestoneData;
         const roomData = await roomModel.findById(groupId);
         if (!roomData || !roomData.members) {
           console.error("Group room not found or has no members");
@@ -181,7 +219,7 @@ const initializeSocket = (io) => {
         await Promise.all(
           recipients.map(async (recipientId) => {
             console.log("Recipient ID:", recipientId);
-            
+
             const newNotification = new Notification({
               recipient: recipientId,
               sender: senderId,
