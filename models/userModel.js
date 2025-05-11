@@ -1,6 +1,10 @@
 const { Schema, default: mongoose, model } = require("mongoose");
 
 const userSchema = new Schema({
+   imageUrl: {
+      type: String,
+      
+    },
   firstName: {
     type: String,
   },
@@ -15,26 +19,14 @@ const userSchema = new Schema({
     type: Date,
     required: true,  
   },
-  // gender: {
-  //   enum: ["male", "female", "other"],
-  // },
-  // life_style_goals: {
-  //   type: String,
-  // },
+
   password: {
     type: String,
   },
   newPassword:{
     type: String,
   },
-  // phone_number: {
-  //   type: Number,
-  // },
-  // interests: [
-  //   {
-  //     type: String,
-  //   },
-  // ],
+
   resetToken: String,
   resetTokenExpiry: Date
 });

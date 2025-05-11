@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const passwordHash = require("password-hash");
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const v2 = require("../utils/cloudinaryConfig");
 
 
 
@@ -39,17 +40,50 @@ module.exports.getIdFromToken = async (token) => {
 
 module.exports.signUp = async (req, res) => {
   try {
-    const hashedPassword = passwordHash.generate(req.body.password);
-    const newUser = new userModel({ ...req.body, password: hashedPassword });
+    // Extract user data from the request body
+    const userData = req.body;
+    
+    // Hash the password
+    const hashedPassword = passwordHash.generate(userData.password);
+    
+    // Upload profile image if provided
+    let imageUrl = null;
+    if (req.file) {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          const upload = v2?.uploader?.upload_stream((error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          });
+          upload?.end(req?.file?.buffer);
+        });
+        imageUrl = result.secure_url;
+      } catch (uploadError) {
+        console.error("Error uploading image:", uploadError);
+        // Continue with signup even if image upload fails
+      }
+    }
+    
+    // Create the new user with the image URL
+    const newUser = new userModel({
+      ...userData,
+      password: hashedPassword,
+      imageUrl: imageUrl || null // Add the image URL to the user data
+    });
+    
+    // Save the user to the database
     await newUser.save();
+    
+    // Generate JWT token
     const token = jwt.sign({ id: newUser._id }, process.env.authenticationKey);
+    
+    // Return the user data and token
     res.status(200).json({ user: newUser, token });
   } catch (error) {
     console.log(error);
-    res.status(400).json({ error: error });
+    res.status(400).json({ message: "Failed to sign up", error: error.message });
   }
 };
-
 module.exports.logIn = async (req, res) => {
   try {
     const { email, password } = req.body;
