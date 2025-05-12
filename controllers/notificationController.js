@@ -20,7 +20,7 @@ const createNotification = async (recipientId, senderId, type, metadata) => {
         .to(`user-${recipientId}`)
         .emit("new-notification", notification);
     }
-
+    console.log("notification : ",notification)
     return notification;
   } catch (error) {
     console.error("Error creating notification:", error);
@@ -33,7 +33,7 @@ const getUserNotifications = async (req, res) => {
   try {
     const userId = await getIdFromToken(req.header("Authorization"));
     const notifications = await Notification.find({ recipient: userId })
-      .populate("sender", "name")
+      .populate("sender", "firstName")
       .sort({ createdAt: -1 });
 
     res.status(200).json(notifications);

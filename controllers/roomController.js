@@ -96,6 +96,7 @@ module.exports.getPersonalRooms = async (req, res) => {
     const userId = await getIdFromToken(req.header("Authorization"));
     const personalRooms = await getRoomsWithRecentMessages(userId, "personal");
 
+
     res.status(200).json(personalRooms);
   } catch (error) {
     console.log(error);
