@@ -26,11 +26,7 @@ const milestoneSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
-    status: {
-        type: String,
-        enum: ['Pending', 'In Progress', 'Completed'], 
-        default: 'Pending' 
-    }
+  
 });
 
 const Milestone = mongoose.model('Milestone', milestoneSchema);

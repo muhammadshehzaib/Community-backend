@@ -31,11 +31,7 @@ const groupMilestoneSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
-    status: {
-        type: String,
-        enum: ['Pending', 'In Progress', 'Completed'],
-        default: 'Pending'
-    }
+  
 }, { timestamps: true });
 
 const GroupMilestone = mongoose.model('GroupMilestone', groupMilestoneSchema);

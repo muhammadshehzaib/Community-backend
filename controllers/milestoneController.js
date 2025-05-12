@@ -14,7 +14,6 @@ const createMilestone = async (req, res) => {
             description,
             category,
             user: userId,
-            status: 'Pending'
         });
 
         await milestone.save();
