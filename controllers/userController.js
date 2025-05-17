@@ -40,13 +40,10 @@ module.exports.getIdFromToken = async (token) => {
 
 module.exports.signUp = async (req, res) => {
   try {
-    // Extract user data from the request body
     const userData = req.body;
     
-    // Hash the password
     const hashedPassword = passwordHash.generate(userData.password);
     
-    // Upload profile image if provided
     let imageUrl = null;
     if (req.file) {
       try {
@@ -243,39 +240,78 @@ module.exports.resetPassword = async (req, res) => {
 };
 
 module.exports.updateUserProfile = async (req, res) => {
+  console.log("updateUserProfile called");
+
   try {
-    // First verify the user is authenticated
-    const authenticated = await this.checkAuthenticity(
-      req.header("Authorization")
-    );
-    
+    console.log("Getting Authorization header");
+    const authHeader = req.header("Authorization");
+    console.log("Authorization Header:", authHeader);
+
+    console.log("Checking authenticity");
+    const authenticated = await this.checkAuthenticity(authHeader);
+    console.log("Authenticated:", authenticated);
+
     if (!authenticated) {
+      console.log("Authentication failed");
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // Get user ID from token
-    const userId = await this.getIdFromToken(req.header("Authorization"));
+    console.log("Getting user ID from token");
+    const userId = await this.getIdFromToken(authHeader);
+    console.log("User ID:", userId);
 
+    console.log("Constructing updateData object");
     const updateData = {
-      name: req.body.name,
-      life_style_goals: req.body.life_style_goals,
-      phone_number: req.body.phone_number,
-      interests: req.body.interests,
+      firstName: req.body.firstName,
+      lastName: req.body.lastName,
+      dob: req.body.dob,
     };
+    console.log("updateData initial:", updateData);
 
-    // Remove undefined fields
-    Object.keys(updateData).forEach(key => 
-      updateData[key] === undefined && delete updateData[key]
-    );
+    if (req.file) {
+      console.log("File detected in request:", req.file.originalname);
+      try {
+        console.log("Uploading image to Cloudinary");
+        const result = await new Promise((resolve, reject) => {
+          console.log("Creating upload stream");
+          const upload = v2.uploader.upload_stream(
+            { resource_type: "auto" },
+            (error, result) => {
+              if (error) {
+                console.log("Upload error:", error);
+                return reject(error);
+              }
+              console.log("Upload result:", result);
+              resolve(result);
+            }
+          );
+          console.log("Ending upload stream");
+          upload.end(req.file.buffer);
+        });
 
+        console.log("Image uploaded successfully");
+        updateData.imageUrl = result.secure_url;
+        console.log("updateData.imageUrl:", updateData.imageUrl);
 
-    // Validate interests if provided
-    if (updateData.interests && !Array.isArray(updateData.interests)) {
-      return res.status(400).json({
-        message: "Interests must be an array"
-      });
+      } catch (uploadError) {
+        console.error("Image upload failed:", uploadError);
+        updateData.imageUrl = null;
+        console.log("Set updateData.imageUrl to null");
+      }
+    } else {
+      console.log("No file in request");
     }
 
+    console.log("Cleaning undefined fields from updateData");
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        console.log(`Deleting undefined field: ${key}`);
+        delete updateData[key];
+      }
+    });
+    console.log("Cleaned updateData:", updateData);
+
+    console.log("Updating user in database");
     const updatedUser = await userModel.findByIdAndUpdate(
       userId,
       updateData,
@@ -283,21 +319,25 @@ module.exports.updateUserProfile = async (req, res) => {
         new: true,
         runValidators: true
       }
-    ).select('-password -resetToken -resetTokenExpiry -newPassword'); // Exclude sensitive fields
+    ).select('-password -resetToken -resetTokenExpiry -newPassword');
+
+    console.log("Updated user:", updatedUser);
 
     if (!updatedUser) {
+      console.log("User not found in DB");
       return res.status(404).json({
         message: "User not found"
       });
     }
 
+    console.log("Sending success response");
     res.status(200).json({
       message: "Profile updated successfully",
       user: updatedUser
     });
 
   } catch (error) {
-    console.log(error);
+    console.log("Caught error:", error);
     res.status(500).json({
       error: "Error updating profile",
       details: error.message
